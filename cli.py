@@ -35,6 +35,10 @@ if __name__ == "__main__":
 |  本脚本仅适用于蹲回流票, 我们反对将其用于抢票
 |  黄牛４０００＋
 |
+|  本版本移除了对用户数据的加密保护，以便云上远程部署
+|  如无此需求请使用原版
+|  建议购票成功后修改密码以便注销全平台登录状态
+|
 |=====================================================================
 |
 |  交互: 上下 键盘↑↓键, 多选 空格, 确认 回车
@@ -72,11 +76,10 @@ if __name__ == "__main__":
     productConfig = ProductCli(conf=productData).Select(selects=productList) if productList != [] else ProductCli(conf=productData).Generate()
     settingConfig = SettingCli(conf=settingData).Select(selects=settingList) if settingList != [] else SettingCli(conf=settingData).Generate()
 
-    if "phone" not in userConfig or "gold" not in settingConfig:
-        logger.error("【用户配置】配置文件版本过期，请重新新建配置文件")
-        logger.warning("程序正在准备退出...")
-        sleep(5)
-        sys.exit()
+    if 'phone' in userConfig:
+        pass
+    else:
+        print("当前配置内缺失部分内容，可能是使用了旧版用户配置，请新建用户配置。")
 
     net = Request(
         cookie=userConfig["cookie"],

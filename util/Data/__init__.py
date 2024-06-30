@@ -177,37 +177,18 @@ class Data:
     @logger.catch
     def AESEncrypt(self, data: str) -> str:
         """
-        AES-128 加密
-
-        data: 数据
-        key: 硬件ID
+        本区域曾经为加密代码
         """
-        mid = "b'a1234567-1234-1234'"       #简单固定了用于加密的 AES 密钥
-        key = mid.encode()[:16]
-        cipher = AES.new(key, AES.MODE_ECB)
-        cipher_text = cipher.encrypt(pad(data.encode(), AES.block_size))
-        return base64.b64encode(cipher_text).decode("utf-8")
+
+        return data
 
     @logger.catch
     def AESDecrypt(self, data: str) -> str:
         """
-        AES-128 解密
-
-        data: 数据
-        key: 硬件ID
+        本区域曾经为解密代码
         """
-        mid = "b'a1234567-1234-1234'"       #简单固定了用于加密的 AES 密钥
-        key = mid.encode()[:16]
-        cipher = AES.new(key, AES.MODE_ECB)
-        cipher_text = base64.b64decode(data.encode("utf-8"))
-        try:
-            decrypted_text = unpad(cipher.decrypt(cipher_text), AES.block_size)
-            return decrypted_text.decode("utf-8")
-        except Exception:
-            logger.error("【解密】这是你的配置吗?")
-            logger.warning("程序正在准备退出...")
-            sleep(5)
-            sys.exit()
+
+        return data
 
     @logger.catch
     def CookieAppend(self, baseCookie: dict) -> dict:
