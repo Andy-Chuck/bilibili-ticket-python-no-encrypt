@@ -70,6 +70,7 @@ class ProductCli:
             活动
             """
             print(f"{self.BLUE}[{self.YELLOW}!{self.BLUE}]{self.RESET} BW2024链接: show.bilibili.com/platform/detail.html?id=85939")
+            print(f"{self.BLUE}[{self.YELLOW}!{self.BLUE}]{self.RESET} BML2024链接: show.bilibili.com/platform/detail.html?id=85938")
             url = self.data.Inquire(
                 type="Text",
                 message="请粘贴要抢的活动的网页链接",
@@ -135,7 +136,7 @@ class ProductCli:
                     message="请选择价位",
                     choices=list(lists.keys()),
                 )
-                return lists[select], select.split('(')[0].strip()
+                return lists[select], select.split("(")[0].strip().replace(self.YELLOW, "").replace(self.RESET, "")
 
             except InfoException:
                 logger.exception("请重新配置活动信息!")

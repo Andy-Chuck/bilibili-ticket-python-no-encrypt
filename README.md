@@ -1,4 +1,4 @@
-# Transition Ticket(ACPRIVATE)
+# Transition Ticket
 
 ## 声明
 
@@ -39,17 +39,14 @@ python cli.py
 
 ## 开发计划
 
-- [ ] JSON请求分离
-- [ ] 倒计时修复
-- [ ] 提前获取Token
-- [ ] 将code处理移入状态机
+- [ ] Token过期自动刷新
+- [ ] 将Code处理移入状态机
 - [ ] 修改打包模式为目录模式, 而不是单文件模式
 - [ ] 显示版本号
 - [ ] 成功付款后返回CLI第一步
 - [ ] 短信验证码错误修复
 - [ ] Header补充
 - [ ] UPX
-- [ ] 多人购票
 - [ ] 多种类型活动抢票
 - [ ] 图形界面(PySide6)
 

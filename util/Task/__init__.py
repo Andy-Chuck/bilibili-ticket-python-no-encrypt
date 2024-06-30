@@ -22,6 +22,7 @@ class Task:
         screenId: int,
         skuId: int,
         buyer: dict,
+        goldTime: float,
     ):
         """
         初始化
@@ -33,12 +34,13 @@ class Task:
         screenId: 场次ID
         skuId: 商品ID
         buyer: 购买者信息
+        goldTime: 开票黄金时间
         """
 
         self.net = net
         self.cap = cap
         self.sleep = sleep
-        self.api = Bilibili(net=self.net, projectId=projectId, screenId=screenId, skuId=skuId, buyer=buyer)
+        self.api = Bilibili(net=self.net, projectId=projectId, screenId=screenId, skuId=skuId, buyer=buyer, count=len(buyer), goldTime=goldTime)
 
         self.states = [
             State(name="开始"),
@@ -160,7 +162,9 @@ class Task:
         )
 
         # 上次刷新时间
-        self.lastTime = time()
+        self.lastTime = 0
+        # 是否已缓存getV2
+        self.queryCache = False
 
         # 关闭Transitions自带日志
         logging.getLogger("transitions").setLevel(logging.CRITICAL)
@@ -172,7 +176,7 @@ class Task:
         """
         start_time = self.api.GetSaleStartTime()
         countdown = start_time - int(time())
-        logger.info(f"【等待开票】本机时间已校准!")
+        logger.info("【等待开票】本机时间已校准!")
 
         if countdown > 0:
             logger.warning("【等待开票】请确保本机时间是北京时间, 服务器用户尤其要注意!")
@@ -195,14 +199,19 @@ class Task:
                     sleep(5)
                     countdown -= 5
 
-                elif 60 > countdown > 0:
+                elif 60 > countdown >= 1:
                     logger.info(f"【等待开票】即将开票! 需要等待 {countdown} 秒")
                     sleep(1)
                     countdown -= 1
 
+                # 准点退出循环
+                elif countdown < 1:
+                    sleep(countdown)
+
             if countdown == 0:
                 logger.info("【等待开票】等待结束! 开始抢票")
-
+                # 防止本机时间校准偏移
+                sleep(0.003)
         else:
             logger.info("【等待开票】已开票! 开始进入抢票模式")
 
@@ -213,16 +222,25 @@ class Task:
 
         返回值: 0-成功, 1-风控, 2-未开票, 3-未知
         """
-        self.queryTokenResult = self.api.QueryToken()
-        self.lastTime = time()
+        # 超过9分钟 / Token刷新失败重新获取Token / 验证结束重新获取Token / 创建订单时Token失效重新获取Token
+        if time() >= self.lastTime + 9 * 60 or self.queryTokenResult == 2 or self.riskProcessResult or self.createOrderResult == 1:
+            logger.info("【刷新Token】开始刷新")
+            self.lastTime = time()
+            self.queryTokenResult = self.api.QueryToken()
+            self.riskProcessResult = False
+            self.createOrderResult = 0
 
-        # 顺路
-        if self.queryTokenResult == 0:
-            self.api.QueryAmount()
+            # 顺路
+            if not self.queryCache:
+                logger.info("【刷新Token】已缓存商品信息")
+                self.api.QueryAmount()
+                self.queryCache = True
 
-        # 防风控
+            # 防风控
+            else:
+                sleep(self.sleep)
         else:
-            sleep(self.sleep)
+            logger.warning("【刷新Token】未到9分钟/未满足抢票条件, 不刷新Token")
 
     @logger.catch
     def RiskProcessAction(self) -> None:
@@ -303,6 +321,6 @@ class Task:
             sleep(0.15)
             self.trigger(job[self.state])  # type: ignore
             if time() >= self.lastTime + 9 * 60:
-                logger.info("【刷新Token】已经9分钟没刷新Token了! 开始刷新")
+                logger.info("【刷新Token】已经9分钟没刷新Token了! 尝试刷新")
                 self.to_获取Token()  # type: ignore
         return True
