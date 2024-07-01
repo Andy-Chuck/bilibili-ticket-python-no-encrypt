@@ -29,7 +29,6 @@
 
 黄牛４０００＋.
 
-
 ## 使用
 
 [下载地址](https://github.com/biliticket/transition-ticket/releases)  （此链接为原版，如需打包本版请按下方说明自行操作）
@@ -55,11 +54,10 @@ python cli.py
 
 ## 开发计划
 
-- [ ] Token过期自动刷新
+- [ ] *Token提前刷新+自动刷新*
 - [ ] 将Code处理移入状态机
 - [ ] 修改打包模式为目录模式, 而不是单文件模式
 - [ ] 显示版本号
-- [ ] 成功付款后返回CLI第一步
 - [ ] 短信验证码错误修复
 - [ ] Header补充
 - [ ] UPX
