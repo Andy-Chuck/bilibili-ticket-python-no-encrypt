@@ -74,7 +74,6 @@ class Bilibili:
         # 刚刚验证完
         else:
             url = f"https://show.bilibili.com/api/ticket/order/prepare?project_id={self.projectId}&token={self.token}&gaia_vtoken={self.token}"
-            self.risked = False
 
         params = {
             "project_id": self.projectId,
@@ -335,10 +334,10 @@ class Bilibili:
             "pay_money": self.cost * self.count,
             "order_type": self.orderType,
             "timestamp": timestamp,
-            "buyer_info": f"{json.dumps(self.buyer)}",
+            "buyer_info": json.dumps(self.buyer),
             "token": self.token,
             "deviceId": "",
-            "clickPosition": json.dumps(clickPosition),
+            "clickPosition": clickPosition,
             "newRisk": True,
             "requestSource": self.scene,
         }
@@ -370,6 +369,11 @@ class Bilibili:
         elif code in [100079, 100048]:
             logger.error("【创建订单】存在未付款/未完成订单! 请尽快付款")
             sleep(0.5)
+            return 3
+
+        # 硬控
+        elif code == 3:
+            logger.error("【创建订单】被硬控了, 需等待几秒钟")
             return 3
 
         # 订单已存在/已购买
