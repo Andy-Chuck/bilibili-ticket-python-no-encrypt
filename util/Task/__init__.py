@@ -20,6 +20,7 @@ class Task:
         net: Request,
         cap: Captcha,
         api: Bilibili,
+        sleep: int = 0.35,
         goldTime: float = 35.0,
         isDebug: bool = False,
     ):
@@ -29,6 +30,7 @@ class Task:
         net: 网络实例
         cap: 验证码实例
         api: Bilibili实例
+        sleep: 任务间请求间隔时间
         goldTime: 开票黄金时间
         isDebug: 调试模式
         """
@@ -64,10 +66,18 @@ class Task:
             dest="等待开票",
         )
 
+        # 等待开票结束
         self.machine.add_transition(
             trigger="WaitAvailable",
             source="等待开票",
             dest="获取Token",
+            conditions=lambda: not self.skipToken,
+        )
+        self.machine.add_transition(
+            trigger="WaitAvailable",
+            source="等待开票",
+            dest="创建订单",
+            conditions=lambda: self.skipToken,
         )
 
         # 获取Token结束
@@ -165,7 +175,7 @@ class Task:
         )
 
         # 正常Sleep
-        self.normalSleep = 0.35
+        self.normalSleep = sleep
         # 减速Sleep
         self.slowSleep = 1
         # ERR3 Sleep
@@ -174,6 +184,8 @@ class Task:
         self.refreshInterval = 7.5
         # 上次刷新Token时间
         self.refreshTime = 0
+        # 是否跳过Token获取
+        self.skipToken = False
         # 是否已缓存getV2
         self.queryCache = False
 
@@ -226,6 +238,9 @@ class Task:
                 elif countdown == 60:
                     logger.info("【等待开票】即将开票! 正在提前获取Token...")
                     self.QueryTokenAction()
+                    self.skipToken = True
+                    if self.queryTokenCode == -401:
+                        self.RiskProcessAction()
 
                 elif 60 > countdown > 1:
                     logger.info(f"【等待开票】即将开票! 需要等待 {countdown-1} 秒")
@@ -381,7 +396,7 @@ class Task:
             # 库存不足 219,100009
             case 219 | 100009:
                 if self.data.TimestampCheck(timestamp=self.api.saleStart, duration=self.goldTime):
-                    logger.warning(f"【创建订单】目前处于开票{self.goldTime}分钟黄金期, 已为您忽略无票提示!")
+                    logger.warning(f"【创建订单】库存不足! 目前处于开票{self.goldTime}分钟黄金期, 脚本将持续申请下单!")
                 else:
                     logger.warning("【创建订单】库存不足!")
 
