@@ -20,7 +20,7 @@ class Task:
         net: Request,
         cap: Captcha,
         api: Bilibili,
-        sleep: int = 0.35,
+        sleep: float = 0.5,
         goldTime: float = 35.0,
         isDebug: bool = False,
     ):
@@ -38,6 +38,7 @@ class Task:
         self.net = net
         self.cap = cap
         self.api = api
+        self.normalSleep = sleep
 
         self.goldTime = goldTime
 
@@ -174,8 +175,6 @@ class Task:
             conditions=lambda: self.createStatusCode != 0,
         )
 
-        # 正常Sleep
-        self.normalSleep = sleep
         # 减速Sleep
         self.slowSleep = 1
         # ERR3 Sleep
@@ -235,7 +234,7 @@ class Task:
                     sleep(5)
                     countdown -= 5
 
-                elif countdown == 60:
+                elif countdown == 30:
                     logger.info("【等待开票】即将开票! 正在提前获取Token...")
                     self.QueryTokenAction()
                     self.skipToken = True
@@ -418,6 +417,13 @@ class Task:
             # 订单已存在/已购买
             case 100049:
                 logger.error("【创建订单】该项目每人限购1张, 已存在购买订单")
+                logger.warning("程序正在准备退出...")
+                sleep(5)
+                sys.exit()
+
+            # 超过购买数量
+            case 100098:
+                logger.error("【创建订单】该票种已超过可购买数量! 请更换账号或票种")
                 logger.warning("程序正在准备退出...")
                 sleep(5)
                 sys.exit()
