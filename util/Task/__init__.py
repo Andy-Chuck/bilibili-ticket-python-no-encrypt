@@ -1,10 +1,12 @@
 import logging
+import sys
+import webbrowser
 from time import sleep, time
 
 from loguru import logger
 from transitions import Machine, State
 
-from util import Bilibili, Captcha, Request
+from util import Bilibili, Captcha, Data, Request
 
 
 class Task:
@@ -18,6 +20,8 @@ class Task:
         net: Request,
         cap: Captcha,
         api: Bilibili,
+        goldTime: float = 35.0,
+        isDebug: bool = False,
     ):
         """
         初始化
@@ -25,11 +29,15 @@ class Task:
         net: 网络实例
         cap: 验证码实例
         api: Bilibili实例
+        goldTime: 开票黄金时间
+        isDebug: 调试模式
         """
 
         self.net = net
         self.cap = cap
         self.api = api
+
+        self.goldTime = goldTime
 
         self.states = [
             State(name="开始"),
@@ -62,7 +70,7 @@ class Task:
             dest="获取Token",
         )
 
-        # 0-成功, 1-验证码, 2-失败
+        # 获取Token结束
         self.machine.add_transition(
             trigger="QueryToken",
             source="获取Token",
@@ -73,44 +81,50 @@ class Task:
             trigger="QueryToken",
             source="获取Token",
             dest="验证码",
-            conditions=lambda: self.queryTokenCode == 1,
+            conditions=lambda: self.queryTokenCode == -401,
         )
         self.machine.add_transition(
             trigger="QueryToken",
             source="获取Token",
             dest="获取Token",
-            conditions=lambda: self.queryTokenCode == 2,
+            conditions=lambda: self.queryTokenCode not in [0, -401],
         )
 
-        # True-成功, False-失败
+        # 验证码结束
         self.machine.add_transition(
             trigger="RiskProcess",
             source="验证码",
             dest="获取Token",
-            conditions=lambda: self.riskProcessCode is True,
+            conditions=lambda: self.riskProcessCode == 0,
         )
         self.machine.add_transition(
             trigger="RiskProcess",
             source="验证码",
             dest="验证码",
-            conditions=lambda: self.riskProcessCode is False,
+            conditions=lambda: self.riskProcessCode != 0,
         )
 
-        # True-成功, False-失败
+        # 等待余票结束
+        self.machine.add_transition(
+            trigger="QueryTicket",
+            source="等待余票",
+            dest="获取Token",
+            conditions=lambda: not self.data.TimestampCheck(timestamp=self.refreshTime, duration=self.refreshInterval),
+        )
         self.machine.add_transition(
             trigger="QueryTicket",
             source="等待余票",
             dest="创建订单",
-            conditions=lambda: self.queryTicketCode is True,
+            conditions=lambda: self.queryTicketCode,
         )
         self.machine.add_transition(
             trigger="QueryTicket",
             source="等待余票",
             dest="等待余票",
-            conditions=lambda: self.queryTicketCode is False,
+            conditions=lambda: not self.queryTicketCode,
         )
 
-        # 0-成功, 1-刷新, 2-等待, 3-失败
+        # 创建订单结束
         self.machine.add_transition(
             trigger="CreateOrder",
             source="创建订单",
@@ -121,51 +135,70 @@ class Task:
             trigger="CreateOrder",
             source="创建订单",
             dest="获取Token",
-            conditions=lambda: self.createOrderCode == 1,
+            conditions=lambda: self.createOrderCode in range(100050, 100060) or not self.data.TimestampCheck(timestamp=self.refreshTime, duration=self.refreshInterval),
         )
         self.machine.add_transition(
             trigger="CreateOrder",
             source="创建订单",
             dest="等待余票",
-            conditions=lambda: self.createOrderCode == 2,
+            conditions=lambda: self.createOrderCode in [219, 100009] and not self.data.TimestampCheck(timestamp=self.api.saleStart, duration=self.goldTime),
         )
         self.machine.add_transition(
             trigger="CreateOrder",
             source="创建订单",
             dest="创建订单",
-            conditions=lambda: self.createOrderCode == 3,
+            conditions=lambda: self.createOrderCode not in [0, 219, 100009, *range(100050, 100060)] or self.data.TimestampCheck(timestamp=self.api.saleStart, duration=self.goldTime),
         )
 
-        # True-成功, False-失败
+        # 创建订单状态结束
         self.machine.add_transition(
             trigger="CreateStatus",
             source="创建订单状态",
             dest="完成",
-            conditions=lambda: self.createStatusCode is True,
+            conditions=lambda: self.createStatusCode == 0,
         )
         self.machine.add_transition(
             trigger="CreateStatus",
             source="创建订单状态",
             dest="创建订单",
-            conditions=lambda: self.createStatusCode is False,
+            conditions=lambda: self.createStatusCode != 0,
         )
 
         # 正常Sleep
-        self.normalSleep = 0.3
+        self.normalSleep = 0.35
+        # 减速Sleep
+        self.slowSleep = 1
         # ERR3 Sleep
-        self.errSleep = 4.88
+        self.errSleep = 4.96
+        # 刷新Token间隔
+        self.refreshInterval = 7.5
+        # 上次刷新Token时间
+        self.refreshTime = 0
         # 是否已缓存getV2
         self.queryCache = False
 
-        # 关闭Transitions自带日志
-        logging.getLogger("transitions").setLevel(logging.CRITICAL)
+        self.data = Data()
+
+        if not isDebug:
+            # 关闭Transitions自带日志
+            logging.getLogger("transitions").setLevel(logging.CRITICAL)
 
     @logger.catch
     def WaitAvailableAction(self) -> None:
         """
         等待开票
         """
-        start_time = self.api.GetSaleStartTime()
+        code, start_time = self.api.GetSaleStartTime()
+
+        match code:
+            # 成功
+            case 0:
+                logger.info(f"【获取开票时间】开票时间为 {self.data.TimestampFormat(int(start_time))}, 当前时间为 {self.data.TimestampFormat(int(time()))}")
+
+            # 不知道
+            case _:
+                logger.error("【获取开票时间】获取失败!")
+
         countdown = start_time - int(time())
         logger.info("【等待开票】本机时间已校准!")
 
@@ -185,10 +218,14 @@ class Task:
                     sleep(60)
                     countdown -= 60
 
-                elif 600 > countdown >= 60:
+                elif 600 > countdown > 60:
                     logger.info(f"【等待开票】准备开票! 需要等待 {countdown/60:.1f} 分钟")
                     sleep(5)
                     countdown -= 5
+
+                elif countdown == 60:
+                    logger.info("【等待开票】即将开票! 正在提前获取Token...")
+                    self.QueryTokenAction()
 
                 elif 60 > countdown > 1:
                     logger.info(f"【等待开票】即将开票! 需要等待 {countdown-1} 秒")
@@ -202,7 +239,6 @@ class Task:
 
             if countdown == 0:
                 logger.info("【等待开票】等待结束! 开始抢票")
-                sleep(0.003)
         else:
             logger.info("【等待开票】已开票! 开始进入抢票模式")
 
@@ -210,62 +246,212 @@ class Task:
     def QueryTokenAction(self) -> None:
         """
         获取Token
-
-        返回值: 0-成功, 1-风控, 2-未开票, 3-未知
         """
-        self.queryTokenCode = self.api.QueryToken()
+        logger.info("【获取Token】正在刷新Token...")
+        self.queryTokenCode, msg = self.api.QueryToken()
+        match self.queryTokenCode:
+            # 成功
+            case 0:
+                logger.success("【获取Token】Token获取成功!")
+                self.refreshTime = int(time())
+
+            # 验证
+            case -401:
+                logger.error("【获取Token】需要验证! 下面进入自动过验证")
+
+            # projectID/ScreenId/SkuID错误
+            case 100080 | 100082:
+                logger.error("【获取Token】项目/场次/价位不存在!")
+                logger.warning("程序正在准备退出...")
+                sleep(5)
+                sys.exit()
+
+            # 停售
+            case 100039:
+                logger.error("【获取Token】早停售了你抢牛魔呢")
+                logger.warning("程序正在准备退出...")
+                sleep(5)
+                sys.exit()
+
+            # 不知道
+            case _:
+                logger.error(f"【获取Token】{self.queryTokenCode}: {msg}")
 
         # 顺路
         if not self.queryCache:
-            logger.info("【刷新Token】已缓存商品信息")
+            logger.info("【获取Token】已缓存商品信息")
             self.api.QueryAmount()
             self.queryCache = True
 
     @logger.catch
     def RiskProcessAction(self) -> None:
         """
-        验证码
-
-        返回值: 0-极验验证, 1手机号验证, 2-取消验证, 3-失败
+        验证
         """
-        match self.api.RiskInfo():
+        logger.info("【获取流水】正在尝试获取流水...")
+        code, msg, type, data = self.api.RiskInfo()
+
+        # 分类处理
+        match code:
             case 0:
-                challenge = self.api.GetRiskChallenge()
-                validate = self.cap.Geetest(challenge)
-                self.riskProcessCode = self.api.RiskValidate(validate=validate)
-            case 1:
-                self.riskProcessCode = self.api.RiskValidate(validate_mode="phone")
-            case 2:
-                self.riskProcessCode = True
-            case 3:
-                self.riskProcessCode = False
+                match type:
+                    case "geetest":
+                        logger.info(f"【验证】验证类型为极验验证码! 流水号: {data}")
+                        validate = self.cap.Geetest(data)
+                        self.riskProcessCode, msg = self.api.RiskValidate(validate=validate)
+
+                    case "phone":
+                        logger.info(f"【验证】验证类型为手机号确认验证! 绑定手机号: {data}")
+                        self.riskProcessCode, msg = self.api.RiskValidate(validateMode="phone")
+
+                    case _:
+                        logger.error(f"【验证】{type}类型验证暂未支持!")
+                        self.riskProcessCode = 114514
+                        msg = ""
+
+            # 获取其他地方验证了, 无需验证
+            case 100000:
+                logger.info("【验证】你是双开/在其他地方验证了吗? 视作已验证处理")
+                self.riskProcessCode = 0
+                msg = ""
+
+            # 不知道
+            case _:
+                logger.error(f"【验证】信息获取 {code}: {msg}")
+                self.riskProcessCode = 114514
+                msg = ""
+
+        # 状态查询
+        match self.riskProcessCode:
+            # 成功
+            case 0:
+                logger.info("【验证】验证成功!")
+
+            # 不知道
+            case _:
+                logger.error(f"【验证】校验 {code}: {msg}")
 
     @logger.catch
     def QueryTicketAction(self) -> None:
         """
         等待余票
-
-        返回值: True-成功, False-失败
         """
-        self.queryTicketCode = self.api.QueryAmount()
+        logger.info("【获取票数】正在蹲票...")
+        code, msg, self.queryTicketCode = self.api.QueryAmount()
+
+        match code:
+            # 成功
+            case 0:
+                if self.queryTicketCode:
+                    logger.success("【等待余票】当前可购买")
+                else:
+                    logger.warning("【等待余票】当前无票, 系统正在循环蹲票中! 请稍后")
+                    # 刷新
+                    sleep(self.normalSleep)
+
+            # 太快了
+            case 100001:
+                logger.error("【等待余票】请求过快, 将减慢请求速度!")
+                # 减速
+                sleep(self.slowSleep)
+
+            # 不知道
+            case _:
+                logger.error(f"【等待余票】{code}: {msg}")
+                # 刷新
+                sleep(self.normalSleep)
 
     @logger.catch
     def CreateOrderAction(self) -> None:
         """
         创建订单
-
-        返回值: 0-成功, 1-刷新, 2-等待, 3-失败
         """
-        self.createOrderCode = self.api.CreateOrder()
+        logger.info("【创建订单】正在尝试创建订单...")
+        self.createOrderCode, msg = self.api.CreateOrder()
+
+        match self.createOrderCode:
+            # 成功
+            case 0:
+                logger.success("【创建订单】订单创建成功!")
+
+            # Token过期
+            case x if 100050 <= x <= 100059:
+                logger.warning("【创建订单】Token过期! 即将重新获取")
+
+            # 库存不足 219,100009
+            case 219 | 100009:
+                if self.data.TimestampCheck(timestamp=self.api.saleStart, duration=self.goldTime):
+                    logger.warning(f"【创建订单】目前处于开票{self.goldTime}分钟黄金期, 已为您忽略无票提示!")
+                else:
+                    logger.warning("【创建订单】库存不足!")
+
+                # 规避ERR 3刷新
+                sleep(self.errSleep)
+
+            # 存在未付款订单
+            case 100079 | 100048:
+                logger.error("【创建订单】存在未付款/未完成订单! 请尽快付款")
+                # 刷新
+                sleep(self.normalSleep)
+
+            # 硬控
+            case 3:
+                logger.error("【创建订单】被硬控了, 需等待几秒钟")
+                # 规避ERR 3刷新
+                sleep(self.errSleep)
+
+            # 订单已存在/已购买
+            case 100049:
+                logger.error("【创建订单】该项目每人限购1张, 已存在购买订单")
+                logger.warning("程序正在准备退出...")
+                sleep(5)
+                sys.exit()
+
+            # 本项目需要联系人信息
+            case 209001:
+                logger.error("【创建订单】目前仅支持实名制一人一票类活动哦~(其他类型活动也用不着上脚本吧啊喂)")
+                logger.warning("程序正在准备退出...")
+                sleep(5)
+                sys.exit()
+
+            # 项目/票种不可售 等待开票
+            case 100016 | 100017:
+                logger.error("【创建订单】该项目/票种目前不可售!")
+                logger.warning("程序正在准备退出...")
+                sleep(5)
+                sys.exit()
+
+            # 失败
+            case _:
+                logger.error(f"【创建订单】{self.createOrderCode}: {msg}")
+                # 刷新
+                sleep(self.normalSleep)
 
     @logger.catch
     def CreateStatusAction(self) -> None:
         """
         创建订单状态
-
-        返回值: True-成功, False-失败
         """
-        self.createStatusCode = self.api.GetOrderStatus() if self.api.CreateOrderStatus() else False
+        code, msg = self.api.CreateOrderStatus()
+        match code:
+            # 正常
+            case 0:
+                logger.success("【创建订单状态】锁单成功!")
+
+            # 不知道
+            case _:
+                logger.error(f"【创建订单状态】{code}: {msg}")
+
+        self.createStatusCode, msg, orderId = self.api.GetOrderStatus()
+        match self.createStatusCode:
+            # 成功
+            case 0:
+                logger.success("【获取订单状态】请在打开的浏览器页面进行支付!")
+                webbrowser.open(f"https://show.bilibili.com/platform/orderDetail.html?order_id={orderId}")
+
+            # 不知道
+            case _:
+                logger.error(f"【获取订单状态】{code}: {msg}")
 
     @logger.catch
     def DrawFSM(self) -> None:

@@ -1,19 +1,4 @@
-# Transition Ticket （移除配置加密版）
-
-## 版本说明
-
-本版本移除了对用户数据的加密保护，以便云上远程部署（本地机器登录，云端运行）
-
-如无此需求请使用原版
-
-由于移除了加密解密模块，本项目和原版的用户数据配置并不互相兼容
-
-用户数据明文存储，建议购票成功后修改密码以便注销全平台登录状态
-
-以下文字（包括群聊链接等）如无特殊说明均为原作者所写
-
-使用时如遇到问题，请联系原作者，本项目不定时和原版对比更新
-
+# Transition Ticket
 
 ## 声明
 
@@ -31,7 +16,7 @@
 
 ## 使用
 
-[下载地址](https://github.com/biliticket/transition-ticket/releases)  （此链接为原版，如需打包本版请按下方说明自行操作）
+[下载地址](https://github.com/biliticket/transition-ticket/releases)
 
 注意:
 
@@ -54,12 +39,10 @@ python cli.py
 
 ## 开发计划
 
-- [ ] *Token提前刷新+自动刷新*
 - [ ] 修改打包模式为目录模式, 而不是单文件模式
 - [ ] 显示版本号
 - [ ] 短信验证码错误修复
 - [ ] Header补充
-- [ ] UPX
 - [ ] 多种类型活动抢票
 - [ ] 图形界面(PySide6)
 
@@ -73,7 +56,7 @@ pip install poetry virtualenv
 
 virtualenv venv
 source venv/script/activate
-poetry install --with dev,doc,graph
+poetry install --with dev,graph
 pre-commit install
 
 # 更新
@@ -81,7 +64,7 @@ poetry update
 pre-commit autoupdate
 
 # 打包
-pyinstaller --clean --noconfirm --log-level WARN cli.spec
+pyinstaller --clean --noconfirm --log-level WARN --upx-dir=$(where upx) cli.spec
 ```
 
 ## 感谢

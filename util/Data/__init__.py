@@ -154,8 +154,7 @@ class Data:
         timestamp: 开始时间戳
         duration: 持续时间 分钟
         """
-        timestamp_now = datetime.datetime.now().timestamp()
-        return timestamp + duration * 60 >= timestamp_now >= timestamp
+        return timestamp + duration * 60 >= datetime.datetime.now().timestamp() >= timestamp
 
     @logger.catch
     def PasswordRSAEncrypt(self, password: str, public_key: str) -> str:
