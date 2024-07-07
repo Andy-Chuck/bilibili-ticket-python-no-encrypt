@@ -38,8 +38,8 @@ class Task:
         self.net = net
         self.cap = cap
         self.api = api
-        self.normalSleep = sleep
 
+        self.normalSleep = sleep
         self.goldTime = goldTime
 
         self.states = [
@@ -53,7 +53,9 @@ class Task:
             State(name="完成"),
         ]
 
+        # 状态机更新时请取消此处及self.DrawFSM()注释以重新生成FSM图
         # from transitions.extensions import GraphMachine
+        # self.machine = GraphMachine(
         self.machine = Machine(
             model=self,
             states=self.states,
@@ -189,6 +191,9 @@ class Task:
         self.queryCache = False
 
         self.data = Data()
+
+        # 取消以绘制FSM图
+        # self.DrawFSM()
 
         if not isDebug:
             # 关闭Transitions自带日志
@@ -351,7 +356,8 @@ class Task:
         等待余票
         """
         logger.info("【获取票数】正在蹲票...")
-        code, msg, self.queryTicketCode = self.api.QueryAmount()
+        code, msg, clickable, saleable = self.api.QueryAmount()
+        self.queryTicketCode = clickable or saleable
 
         match code:
             # 成功
