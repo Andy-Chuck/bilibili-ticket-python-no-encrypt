@@ -29,10 +29,8 @@ class SettingCli:
         self.config = {
             # 网络
             "request": {
-                # 开票黄金时间
-                "gold": 35.0,
                 # 请求间隔
-                "sleep": 0.5,
+                "sleep": 1.2,
                 # 超时
                 "timeout": 3.0,
                 # 代理
@@ -51,6 +49,8 @@ class SettingCli:
             },
             # 开发者
             "dev": {
+                # 加密用户数据
+                "isEncrypt": True,
                 # 开发者模式
                 "debug": False,
             },
@@ -101,7 +101,7 @@ class SettingCli:
             interval = self.data.Inquire(
                 type="Text",
                 message="请输入创建订单请求间隔时间(单位:秒), 太快有概率会被风控!",
-                default="0.5",
+                default="1.2",
             )
             return float(interval)
 
@@ -153,7 +153,6 @@ class SettingCli:
             return filename
 
         print("下面开始配置设置!")
-        self.config["request"]["gold"] = GoldStep()
         self.config["request"]["sleep"] = SleepStep()
         (
             self.config["notice"]["system"],

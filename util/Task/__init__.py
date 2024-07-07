@@ -21,7 +21,6 @@ class Task:
         cap: Captcha,
         api: Bilibili,
         sleep: float = 0.5,
-        goldTime: float = 35.0,
         isDebug: bool = False,
     ):
         """
@@ -31,7 +30,6 @@ class Task:
         cap: 验证码实例
         api: Bilibili实例
         sleep: 任务间请求间隔时间
-        goldTime: 开票黄金时间
         isDebug: 调试模式
         """
 
@@ -40,7 +38,6 @@ class Task:
         self.api = api
 
         self.normalSleep = sleep
-        self.goldTime = goldTime
 
         self.states = [
             State(name="开始"),
@@ -121,14 +118,8 @@ class Task:
         self.machine.add_transition(
             trigger="QueryTicket",
             source="等待余票",
-            dest="获取Token",
-            conditions=lambda: not self.data.TimestampCheck(timestamp=self.refreshTime, duration=self.refreshInterval),
-        )
-        self.machine.add_transition(
-            trigger="QueryTicket",
-            source="等待余票",
             dest="创建订单",
-            conditions=lambda: self.queryTicketCode,
+            conditions=lambda: self.queryTicketCode or not self.data.TimestampCheck(timestamp=self.refreshTime, duration=self.refreshInterval),
         )
         self.machine.add_transition(
             trigger="QueryTicket",
@@ -148,19 +139,21 @@ class Task:
             trigger="CreateOrder",
             source="创建订单",
             dest="获取Token",
-            conditions=lambda: self.createOrderCode in range(100050, 100060) or not self.data.TimestampCheck(timestamp=self.refreshTime, duration=self.refreshInterval),
+            conditions=lambda: self.createOrderCode in range(100050, 100060),
         )
         self.machine.add_transition(
             trigger="CreateOrder",
             source="创建订单",
             dest="等待余票",
-            conditions=lambda: self.createOrderCode in [219, 100009] and not self.data.TimestampCheck(timestamp=self.api.saleStart, duration=self.goldTime),
+            conditions=lambda: self.createOrderCode in [219, 100009] and not self.data.TimestampCheck(timestamp=self.goldTime, duration=self.goldInterval),
         )
         self.machine.add_transition(
             trigger="CreateOrder",
             source="创建订单",
             dest="创建订单",
-            conditions=lambda: self.createOrderCode not in [0, 219, 100009, *range(100050, 100060)] or self.data.TimestampCheck(timestamp=self.api.saleStart, duration=self.goldTime),
+            conditions=lambda: self.createOrderCode not in [0, 219, 100009, *range(100050, 100060)]
+            or self.data.TimestampCheck(timestamp=self.goldTime, duration=self.goldInterval)
+            or not self.data.TimestampCheck(timestamp=self.refreshTime, duration=self.refreshInterval),
         )
 
         # 创建订单状态结束
@@ -181,12 +174,20 @@ class Task:
         self.slowSleep = 1
         # ERR3 Sleep
         self.errSleep = 4.96
-        # 刷新Token间隔
-        self.refreshInterval = 7.5
-        # 上次刷新Token时间
+
+        # 重试创建订单间隔
+        self.refreshInterval = 2.1
+        # 上次重试创建订单时间
         self.refreshTime = 0
+
+        # 黄金期开始时间
+        self.goldTime = 0
+        # 黄金期持续时间
+        self.goldInterval = 12.5
+
         # 是否跳过Token获取
         self.skipToken = False
+
         # 是否已缓存getV2
         self.queryCache = False
 
@@ -272,11 +273,10 @@ class Task:
             # 成功
             case 0:
                 logger.success("【获取Token】Token获取成功!")
-                self.refreshTime = int(time())
 
             # 验证
             case -401:
-                logger.error("【获取Token】需要验证! 下面进入自动过验证")
+                logger.warning("【获取Token】需要验证! 下面进入自动过验证")
 
             # projectID/ScreenId/SkuID错误
             case 100080 | 100082:
@@ -356,14 +356,23 @@ class Task:
         等待余票
         """
         logger.info("【获取票数】正在蹲票...")
-        code, msg, clickable, saleable = self.api.QueryAmount()
-        self.queryTicketCode = clickable or saleable
+        code, msg, clickable, salenum = self.api.QueryAmount()
+        self.queryTicketCode = clickable or salenum != 4  # 2: 可售 4: 已售罄 8: 暂时售罄
 
         match code:
             # 成功
             case 0:
                 if self.queryTicketCode:
-                    logger.success("【等待余票】当前可购买")
+                    if salenum == 2:
+                        logger.success("【等待余票】当前可购买")
+                        self.goldTime = int(time())
+
+                    elif salenum == 8:
+                        logger.warning("【等待余票】暂时售罄")
+
+                    else:
+                        logger.warning("【等待余票】未知num! 请提交给开发者")
+
                 else:
                     logger.warning("【等待余票】当前无票, 系统正在循环蹲票中! 请稍后")
                     # 刷新
@@ -388,6 +397,7 @@ class Task:
         """
         logger.info("【创建订单】正在尝试创建订单...")
         self.createOrderCode, msg = self.api.CreateOrder()
+        self.refreshTime = int(time())
 
         match self.createOrderCode:
             # 成功
@@ -400,13 +410,14 @@ class Task:
 
             # 库存不足 219,100009
             case 219 | 100009:
-                if self.data.TimestampCheck(timestamp=self.api.saleStart, duration=self.goldTime):
-                    logger.warning(f"【创建订单】库存不足! 目前处于开票{self.goldTime}分钟黄金期, 脚本将持续申请下单!")
+                if self.data.TimestampCheck(timestamp=self.goldTime, duration=self.goldInterval):
+                    logger.warning(f"【创建订单】{((int(time()-self.goldTime))/60):.2f}分钟内有过余票, 无视无票直到{self.goldInterval}分钟后......")
+
+                    # 规避ERR 3刷新
+                    sleep(self.errSleep)
+
                 else:
                     logger.warning("【创建订单】库存不足!")
-
-                # 规避ERR 3刷新
-                sleep(self.errSleep)
 
             # 存在未付款订单
             case 100079 | 100048:
